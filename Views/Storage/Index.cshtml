@@ -29,10 +29,18 @@
                         <table class="table table-striped table-bordered table-sm align-middle">
                             <thead class="table-dark"><tr><th>Name</th><th>Email</th><th>Phone</th></tr></thead>
                             <tbody>
-                                @foreach (var customer in Model.Customers)
+                                @if (Model != null)
                                 {
-                                    <tr><td>@customer.FirstName @customer.LastName</td><td>@customer.Email</td><td>@customer.PhoneNumber</td></tr>
+                                    @foreach (var customer in Model.Customers)
+                                    {
+                                        <tr><td>@customer.FirstName @customer.LastName</td><td>@customer.Email</td><td>@customer.PhoneName</td></tr>
+                                    }
                                 }
+                                else
+                                {
+                                    <p class="text-muted">No database entries found.</p>
+                                }
+
                             </tbody>
                         </table>
                     </div>
@@ -55,9 +63,16 @@
                         <table class="table table-striped table-bordered table-sm align-middle">
                             <thead class="table-dark"><tr><th>Item Name</th><th>Description</th><th>Base Price</th></tr></thead>
                             <tbody>
+                                @if (Model?.Products != null)
+                            {
                                 @foreach (var product in Model.Products)
                                 {
                                     <tr><td>@product.ProductName</td><td>@product.Description</td><td>@product.Price.ToString("C")</td></tr>
+                                }
+                            }
+                                else
+                                {
+                                    <p class="text-muted">No database entries found.</p>
                                 }
                             </tbody>
                         </table>
@@ -83,7 +98,7 @@
 
             <h5 class="mb-3">Live Blob Storage Gallery</h5>
             <div class="row g-2">
-                @if (!Model.ImageUrls.Any())
+                @if (Model?.ImageUrls == null || !Model.ImageUrls.Any())
                 {
                     <div class="col-12"><p class="text-muted small text-center bg-white py-3 border rounded">No images stored yet.</p></div>
                 }

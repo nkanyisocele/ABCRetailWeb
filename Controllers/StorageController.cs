@@ -1,101 +1,145 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using ABCRetailWeb.Models;
-using ABCRetailWeb.Services;
+using Microsoft.Extensions.Configuration;
+using System;
+using System.IO;
+using System.Net.Http;
+using System.Text;
+using System.Threading.Tasks;
+using Newtonsoft.Json;
+using ABCRetailWeb.Models; // Maps directly to your models folder structure
 
 namespace ABCRetailWeb.Controllers
 {
     public class StorageController : Controller
     {
-        private readonly TableStorageService _tableStorageService;
-        private readonly BlobStorageService _blobStorageService;
-        private readonly QueueStorageService _queueStorageService;
-        private readonly FileShareLoggingService _fileLoggingService;
+        private readonly HttpClient _httpClient;
+        private readonly string _functionBaseUrl;
 
-        public StorageController(
-            TableStorageService tableStorageService,
-            BlobStorageService blobStorageService,
-            QueueStorageService queueStorageService,
-            FileShareLoggingService fileLoggingService)
+        // Visual Studio injects the standard IHttpClientFactory matching modular guidelines
+        public StorageController(IHttpClientFactory httpClientFactory, IConfiguration configuration)
         {
-            _tableStorageService = tableStorageService;
-            _blobStorageService = blobStorageService;
-            _queueStorageService = queueStorageService;
-            _fileLoggingService = fileLoggingService;
+            _httpClient = httpClientFactory.CreateClient();
+
+            // Extracts your local URL (e.g. https://localhost:7071/api/) dynamically
+            _functionBaseUrl = configuration.GetValue<string>("FunctionAppSettings:BaseUrl")
+                               ?? "https://localhost:7071/api/";
         }
 
-        // GET: /Storage
-        public async Task<IActionResult> Index()
+        [HttpGet]
+        public IActionResult Index()
         {
-            var model = new DashboardViewModel
-            {
-                Customers = await _tableStorageService.GetAllCustomersAsync(),
-                Products = await _tableStorageService.GetAllProductsAsync(),
-                ImageUrls = await _blobStorageService.GetAllBlobsAsync()
-            };
-            return View(model);
+            return View();
         }
 
-        // POST: /Storage/AddCustomer
+        // 1. ASYNCHRONOUS CUSTOMER PROFILE TRANSACTION (TABLE STORAGE TRIGGER)
         [HttpPost]
-        public async Task<IActionResult> AddCustomer(CustomerProfile customer)
+        public async Task<IActionResult> AddCustomer(CustomerProfile model)
         {
-            if (ModelState.IsValid)
+            if (!ModelState.IsValid) return View("Index", model);
+
+            string requestUri = $"{_functionBaseUrl}StoreTableData";
+            var jsonPayload = JsonConvert.SerializeObject(model);
+            var contentString = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+            HttpResponseMessage response = await _httpClient.PostAsync(requestUri, contentString);
+
+            if (response.IsSuccessStatusCode)
             {
-                await _tableStorageService.AddCustomerAsync(customer);
-
-                string msg = $"New Customer Added: {customer.FirstName} {customer.LastName} ({customer.Email})";
-                await _queueStorageService.SendMessageAsync(msg);
-
-                // WRITE TO AZURE FILES: Store a distinct text log file record entry
-                await _fileLoggingService.WriteLogAsync($"customer-{Guid.NewGuid().ToString().Substring(0, 8)}.txt", msg);
+                TempData["SuccessMessage"] = "Customer saved successfully via Azure Serverless Functions.";
             }
-            return RedirectToAction(nameof(Index));
-        }
-
-        // POST: /Storage/AddProduct
-        [HttpPost]
-        public async Task<IActionResult> ReportAction(ProductInfo product)
-        {
-            // Fallback route mapping support for action endpoints
-            return await AddProduct(product);
-        }
-
-        [HttpPost]
-        public async Task<IActionResult> AddProduct(ProductInfo product)
-        {
-            if (ModelState.IsValid)
+            else
             {
-                product.RowKey = Guid.NewGuid().ToString();
-                await _tableStorageService.AddProductAsync(product);
-
-                string msg = $"New Catalog Product Created: {product.ProductName} - Price: {product.Price:C}";
-                await _queueStorageService.SendMessageAsync(msg);
-
-                // WRITE TO AZURE FILES: Store a distinct text log file record entry
-                await _fileLoggingService.WriteLogAsync($"product-{Guid.NewGuid().ToString().Substring(0, 8)}.txt", msg);
+                TempData["ErrorMessage"] = "Failed to store customer profile using serverless engine.";
             }
-            return RedirectToAction(nameof(Index));
+
+            return RedirectToAction("Index");
         }
 
-        // POST: /Storage/UploadImage
+        // 2. ASYNCHRONOUS PRODUCT INVENTORY TRANSACTION (TABLE STORAGE TRIGGER)
         [HttpPost]
-        public async Task<IActionResult> UploadImage(IFormFile file)
+        public async Task<IActionResult> AddProduct(ProductInfo model)
         {
-            if (file != null && file.Length > 0)
+            if (!ModelState.IsValid) return View("Index", model);
+
+            string requestUri = $"{_functionBaseUrl}StoreTableData"; // Shares standard table infrastructure route
+            var jsonPayload = JsonConvert.SerializeObject(model);
+            var contentString = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+            HttpResponseMessage response = await _httpClient.PostAsync(requestUri, contentString);
+
+            if (response.IsSuccessStatusCode)
             {
-                var uniqueFileName = Guid.NewGuid().ToString() + Path.GetExtension(file.FileName);
-                using (var stream = file.OpenReadStream())
-                {
-                    await _blobStorageService.UploadBlobAsync(stream, uniqueFileName);
-                }
-
-                string msg = $"Multimedia Upload Completed: Image file '{uniqueFileName}' added to blob cluster storage container.";
-                await _queueStorageService.SendMessageAsync(msg);
-
-                // WRITE TO AZURE FILES: Store a distinct text log file record entry
-                await _fileLoggingService.WriteLogAsync($"media-{Guid.NewGuid().ToString().Substring(0, 8)}.txt", msg);
+                TempData["SuccessMessage"] = "Product details recorded successfully via Serverless function.";
             }
-            return RedirectToAction(nameof(Index));
+            else
+            {
+                TempData["ErrorMessage"] = "Failed to record product metadata.";
+            }
+
+            return RedirectToAction("Index");
+        }
+
+        // 3. BINARY FILE STREAM TRANSACTION ENGINE (BLOB STORAGE TRIGGER)
+        [HttpPost]
+        public async Task<IActionResult> UploadMedia(IFormFile file)
+        {
+            if (file == null || file.Length == 0)
+            {
+                TempData["ErrorMessage"] = "Please select a valid file to upload.";
+                return RedirectToAction("Index");
+            }
+
+            string requestUri = $"{_functionBaseUrl}UploadBlobMedia";
+
+            using var multipartContent = new MultipartFormDataContent();
+            using var fileStream = file.OpenReadStream();
+            using var streamContent = new StreamContent(fileStream);
+
+            streamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+            multipartContent.Add(streamContent, "file", file.FileName);
+
+            HttpResponseMessage response = await _httpClient.PostAsync(requestUri, multipartContent);
+
+            if (response.IsSuccessStatusCode)
+            {
+                TempData["SuccessMessage"] = "Product image binary blob safely written via serverless backend.";
+            }
+            else
+            {
+                TempData["ErrorMessage"] = "Failed to process binary image stream upload.";
+            }
+
+            return RedirectToAction("Index");
+        }
+
+        // 4. DECOUPLED TRANSACTION MESSAGE INGESTION (QUEUE STORAGE TRIGGER)
+        [HttpPost]
+        public async Task<IActionResult> ProcessOrder(string orderId, string productCode)
+        {
+            if (string.IsNullOrEmpty(orderId))
+            {
+                TempData["ErrorMessage"] = "Order validation data cannot be empty.";
+                return RedirectToAction("Index");
+            }
+
+            string requestUri = $"{_functionBaseUrl}ProcessQueueMessage";
+            var orderData = new { OrderId = orderId, ProductCode = productCode, Timestamp = DateTime.UtcNow };
+
+            var jsonPayload = JsonConvert.SerializeObject(orderData);
+            var contentString = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+            HttpResponseMessage response = await _httpClient.PostAsync(requestUri, contentString);
+
+            if (response.IsSuccessStatusCode)
+            {
+                TempData["SuccessMessage"] = "Transaction event dispatched to Azure Queue successfully.";
+            }
+            else
+            {
+                TempData["ErrorMessage"] = "Failed to append transactional event message.";
+            }
+
+            return RedirectToAction("Index");
         }
     }
 }

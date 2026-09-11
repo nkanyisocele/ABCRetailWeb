@@ -8,6 +8,10 @@ builder.Services.AddSingleton<ABCRetailWeb.Services.QueueStorageService>();
 
 builder.Services.AddSingleton<ABCRetailWeb.Services.FileShareLoggingService>();
 
+// Register a global HttpClient connection mapping for serverless triggers
+builder.Services.AddHttpClient();
+
+
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
