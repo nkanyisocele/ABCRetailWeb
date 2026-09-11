@@ -9,4 +9,3 @@ namespace ABCRetailWeb.Models
         public List<string> ImageUrls { get; set; } = new();
     }
 }
-
