@@ -1,22 +1,30 @@
-﻿using System;
+﻿using Azure.Storage.Files.Shares;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.Functions.Worker.Http;
+using Microsoft.Extensions.Configuration;
+using System;
 using System.IO;
 using System.Net;
 using System.Text;
 using System.Threading.Tasks;
-using Microsoft.Azure.Functions.Worker;
-using Microsoft.Azure.Functions.Worker.Http;
-using Azure.Storage.Files.Shares;
 
 namespace ABCRetail.Functions
 {
     public class FileShareFunction
     {
+        private readonly IConfiguration _configuration;
+
+        public FileShareFunction(IConfiguration configuration)
+        {
+            _configuration = configuration;
+        }
+
         [Function("WriteLogToFile")]
-        public static async Task<HttpResponseData> Run(
+        public async Task<HttpResponseData> Run(
             [HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequestData req,
             FunctionContext executionContext)
         {
-            string connectionString = Environment.GetEnvironmentVariable("AzureWebJobsStorage");
+            string connectionString = _configuration.GetValue<string>("AzureWebJobsStorage");
             var shareClient = new ShareClient(connectionString, "app-logs");
             await shareClient.CreateIfNotExistsAsync();
 
