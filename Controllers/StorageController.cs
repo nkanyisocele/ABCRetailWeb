@@ -6,7 +6,7 @@ using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
-using ABCRetailWeb.Models; // Maps directly to your models folder structure
+using ABCRetailWeb.Models; 
 
 namespace ABCRetailWeb.Controllers
 {
@@ -15,12 +15,12 @@ namespace ABCRetailWeb.Controllers
         private readonly HttpClient _httpClient;
         private readonly string _functionBaseUrl;
 
-        // Visual Studio injects the standard IHttpClientFactory matching modular guidelines
+       
         public StorageController(IHttpClientFactory httpClientFactory, IConfiguration configuration)
         {
             _httpClient = httpClientFactory.CreateClient();
 
-            // Extracts your local URL (e.g. https://localhost:7071/api/) dynamically
+            
             _functionBaseUrl = configuration.GetValue<string>("FunctionAppSettings:BaseUrl")
                                ?? "https://localhost:7071/api/";
         }
@@ -37,7 +37,7 @@ namespace ABCRetailWeb.Controllers
         {
             if (!ModelState.IsValid) return View("Index", model);
 
-            string requestUri = $"{_functionBaseUrl}StoreTableData";
+            string requestUri = "http://localhost:7071/api/StoreTableData";
             var jsonPayload = JsonConvert.SerializeObject(model);
             var contentString = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
 
@@ -61,7 +61,7 @@ namespace ABCRetailWeb.Controllers
         {
             if (!ModelState.IsValid) return View("Index", model);
 
-            string requestUri = $"{_functionBaseUrl}StoreTableData"; // Shares standard table infrastructure route
+            string requestUri = "http://localhost:7071/api/StoreTableData"; // Shares standard table infrastructure route
             var jsonPayload = JsonConvert.SerializeObject(model);
             var contentString = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
 
@@ -89,7 +89,7 @@ namespace ABCRetailWeb.Controllers
                 return RedirectToAction("Index");
             }
 
-            string requestUri = $"{_functionBaseUrl}UploadBlobMedia";
+            string requestUri = "http://localhost:7071/api/UploadBlobMedia";
 
             using var multipartContent = new MultipartFormDataContent();
             using var fileStream = file.OpenReadStream();
